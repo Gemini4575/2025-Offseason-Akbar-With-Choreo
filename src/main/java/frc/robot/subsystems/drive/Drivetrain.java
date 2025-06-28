@@ -40,7 +40,13 @@ import com.studica.frc.AHRS;
 import com.studica.frc.AHRS.NavXComType;
 import com.studica.frc.AHRS.NavXUpdateRate;
 
+import choreo.auto.AutoFactory;
+import choreo.trajectory.SwerveSample;
+
 public class Drivetrain extends SubsystemBase {
+  private final PIDController xController = new PIDController(0.0, 0.0, 0.0);
+  private final PIDController yController = new PIDController(0.0, 0.0, 0.0);
+  private final PIDController headingController = new PIDController(0.0, 0.0, 0.0);
 
   private ProfiledPIDController rotation = new ProfiledPIDController(
       0.007,
@@ -65,21 +71,12 @@ public class Drivetrain extends SubsystemBase {
 
   private final SwerveDrivePoseEstimator poseEstimator;
 
-  private final SwerveSetpointGenerator setpointGenerator;
-  private SwerveSetpoint previousSetpoint;
-  private RobotConfig config;
+  public final AutoFactory autoFactory;
 
   public Drivetrain() {
+    headingController.enableContinuousInput(-Math.PI, Math.PI);
     rotation.enableContinuousInput(-180, 180);
     gyro.reset();
-
-    try {
-      config = RobotConfig.fromGUISettings();
-    } catch (IOException | org.json.simple.parser.ParseException e) {
-      e.printStackTrace();
-      throw new RuntimeException(e);
-    }
-
     var stateStdDevs = VecBuilder.fill(0.1, 0.1, 0.1);
     var visionStdDevs = VecBuilder.fill(1, 1, 1);
     poseEstimator = new SwerveDrivePoseEstimator(
@@ -90,18 +87,14 @@ public class Drivetrain extends SubsystemBase {
         stateStdDevs,
         visionStdDevs);
 
-    poseEstimator.resetPosition(new Rotation2d(180), getModulePositions(),
-        new Pose2d(7.558, 4.010, new Rotation2d(180)));
-
-    configureAutoBuilder();
-
-    setpointGenerator = new SwerveSetpointGenerator(
-        config,
-        Units.rotationsToRadians(1.0) // The max rotation velocity of a swerve module in radians per second. This
-                                      // should probably be stored in your Constants file
+    autoFactory = new AutoFactory(
+        this::getPose, // A function that returns the current robot pose
+        this::resetPose, // A function that resets the current robot pose to the provided Pose2d
+        this::followTrajectory, // The drive subsystem trajectory follower
+        true, // If alliance flipping should be enabled
+        this // The drive subsystem
     );
-    previousSetpoint = new SwerveSetpoint(new ChassisSpeeds(), getModuleStates(),
-        DriveFeedforwards.zeros(config.numModules));
+
   }
 
   private SwerveModuleState[] getModuleStates() {
@@ -124,9 +117,28 @@ public class Drivetrain extends SubsystemBase {
 
   double Rotate_Rot = 0.0;
 
+  public void followTrajectory(SwerveSample sample) {
+    // Get the current pose of the robot
+    Pose2d pose = getPose();
+
+    // Generate the next speeds for the robot
+    ChassisSpeeds speeds = new ChassisSpeeds(
+        sample.vx + xController.calculate(pose.getX(), sample.x),
+        sample.vy + yController.calculate(pose.getY(), sample.y),
+        sample.omega + headingController.calculate(pose.getRotation().getRadians(), sample.heading));
+
+    // Apply the generated speeds
+    driveWithChassisSpeeds(speeds);
+  }
+
   public void driveRobotRelative(ChassisSpeeds c) {
     drive((c.vxMetersPerSecond / MaxMetersPersecond),
         (c.vyMetersPerSecond / MaxMetersPersecond), (c.omegaRadiansPerSecond / kModuleMaxAngularVelocity), false);
+  }
+
+  public void driveWithChassisSpeeds(ChassisSpeeds c) {
+    drive((c.vxMetersPerSecond / MaxMetersPersecond),
+        (c.vyMetersPerSecond / MaxMetersPersecond), (c.omegaRadiansPerSecond / kModuleMaxAngularVelocity), true);
   }
 
   public void drive(double xSpeed, double ySpeed, double rot, boolean fieldRelative) {
@@ -222,39 +234,6 @@ public class Drivetrain extends SubsystemBase {
     // m_odometry.resetPosition(m_gyro.getRotation2d(),
     // getModulePositions(), aPose2d );
     poseEstimator.resetPosition(gyro.getRotation2d(), getModulePositions(), aPose2d);
-  }
-
-  public void configureAutoBuilder() {
-    // Configure AutoBuilder last
-    AutoBuilder.configure(
-        this::getPose, // Robot pose supplier
-        this::resetPose, // Method to reset odometry (will be called if your auto hasa starting pose)
-        this::getRobotRelativeSpeeds, // ChassisSpeeds supplier. MUST BE ROBOT RELATIVE
-        (speeds, feedforwards) -> driveRobotRelative(speeds), // Method that will drive the robot given ROBOT
-        // RELATIVE
-        // ChassisSpeeds. Also optionally outputs
-        // individual
-        // module feedforwards
-        new PPHolonomicDriveController( // PPHolonomicController is the built in path following controller for
-            // holonomic
-            // drive trains
-            new PIDConstants(0.48, 0, 0.0), // Translation PID constants
-            new PIDConstants(11.5, 0, 0.0) // Rotation PID constants
-        ),
-        config, // The robot configuration
-        () -> {
-          // Boolean supplier that controls when the path will be mirrored for the red
-          // alliance This will flip the path being followed to the red side of the field.
-          // THE ORIGIN WILL REMAIN ON THE BLUE SIDE
-
-          var alliance = DriverStation.getAlliance();
-          if (alliance.isPresent()) {
-            return alliance.get() == DriverStation.Alliance.Red;
-          }
-          return false;
-        },
-        this // Reference to this subsystem to set requirements
-    );
   }
 
   public PathConstraints getChassisConstrains() {

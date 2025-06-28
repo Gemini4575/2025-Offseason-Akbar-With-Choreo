@@ -11,6 +11,7 @@ import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.InstantCommand;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.JoystickButton;
@@ -29,6 +30,7 @@ import frc.robot.commands.driving.AlineWheels;
 import frc.robot.commands.driving.Spin180;
 import frc.robot.commands.driving.Stop;
 import frc.robot.commands.driving.TeleopSwerve;
+import frc.robot.commands.testing.AutoChoreoTesting;
 import frc.robot.commands.testing.PathFindToAprilTag;
 import frc.robot.subsystems.LiliCoralSubystem;
 import frc.robot.subsystems.NickClimbingSubsystem;
@@ -47,6 +49,9 @@ import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.auto.NamedCommands;
 import com.pathplanner.lib.commands.PathfindingCommand;
 import com.pathplanner.lib.util.PathPlannerLogging;
+
+import choreo.Choreo;
+import choreo.auto.AutoFactory;
 
 /**
  * This class is where the bulk of the robot should be declared. Since
@@ -68,10 +73,12 @@ public class RobotContainer {
   private final Joystick testing = new Joystick(4);
 
   /* Driver Buttons */
-  private final JoystickButton zeroGyro = new JoystickButton(driver, BACK_BUTTON);
+  private final JoystickButton zeroGyro = new JoystickButton(testing, BACK_BUTTON);
   private final Trigger Slow = new Trigger(new JoystickButton(driver, 7)
       .and(new JoystickButton(driver, 12)))
       .or(new JoystickButton(operator, START_BUTTON));
+
+  /* Choreo Stuff */
 
   /* Subsystems */
   private final Drivetrain D = new Drivetrain();
@@ -90,7 +97,6 @@ public class RobotContainer {
     configureLogging();
 
     SmartDashboard.putData("[Robot]Vision Pose Estimate", visionPoseEstimate);
-    PathfindingCommand.warmupCommand().schedule();
     // Configure the trigger bindings
     configureBindings();
   }
@@ -207,6 +213,6 @@ public class RobotContainer {
    */
   public Command getAutonomousCommand() {
     // An example command will be run in autonomous
-    return null;
+    return new AutoChoreoTesting(D);
   }
 }
